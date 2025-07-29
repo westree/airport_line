@@ -1,0 +1,4 @@
+{
+  "line_notify_token": "ここにLINE Notifyのアクセストークンを貼り付け",
+  "mlit_api_token": "ここに国土交通省APIのアクセストークンを貼り付け"
+}

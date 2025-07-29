@@ -1,0 +1,12 @@
+# 個人情報を含む設定ファイル
+config.json
+
+# 実行ファイル
+chromedriver.exe
+
+# Pythonキャッシュ
+__pycache__/
+*.pyc
+
+# Selenium / webdriver-manager
+.wdm/
