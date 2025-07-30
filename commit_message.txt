@@ -1,1 +1,1 @@
-feat: 羽田空港の裏APIからフライト情報を取得し、ウェブUIとLINE通知に「出口」情報を表示。時間枠調整とKV設定修正。
+refactor: コードのクリーンアップとモジュール分割 (utils, hanedaApi, ttcApi)

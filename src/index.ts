@@ -5,7 +5,8 @@ export interface Env {
     
     LINE_TOKEN: string;
     LINE_USER_ID: string;
-    STATIC_ASSETS: KVNamespace; // Add KV Namespace binding
+    STATIC_ASSETS: KVNamespace;
+    DELAYED_FLIGHTS_KV: KVNamespace; // Add KV Namespace for delayed flights
 }
 
 import { parseDateTime } from './utils';
@@ -139,6 +140,59 @@ async function sendLineReply(replyToken: string, messages: { type: string; text:
     });
 }
 
+// Send a push message to LINE
+async function sendLinePush(userId: string, messages: { type: string; text: string; }[], env: Env) {
+    await fetch('https://api.line.me/v2/bot/message/push', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${env.LINE_TOKEN}`,
+        },
+        body: JSON.stringify({
+            to: userId,
+            messages: messages,
+        }),
+    });
+}
+
+async function sendDelayedFlightNotifications(env: Env) {
+    const flights = await fetchFlightInformation();
+    const now = new Date();
+
+    for (const flight of flights) {
+        const flightNumber = flight["航空会社"][0]["便名"];
+        const actualTime = flight["変更時刻"] || flight["ATA"] || flight["ETA"];
+        const scheduledTime = flight["定刻"];
+        const flightStatus = flight["状況"]; // 1:到着済み, 2:遅延, 3:欠航など
+
+        // 遅延または欠航のフライトをチェック
+        if (flightStatus === "2" || flightStatus === "3") {
+            const notificationKey = `delayed_flight_${flightNumber}_${scheduledTime}`;
+            const notified = await env.DELAYED_FLIGHTS_KV.get(notificationKey);
+
+            if (!notified) {
+                // まだ通知していない場合
+                let messageText = `[遅延/欠航通知]`
+                messageText += `\n便名: ${flightNumber} (${flight["航空会社"][0]["ＡＬ和名称"]})`
+                messageText += `\n出発地: ${flight["出発地空港和名称"]}`;
+                messageText += `\n定刻: ${scheduledTime ? scheduledTime.substring(scheduledTime.indexOf(' ') + 1, scheduledTime.lastIndexOf(':')) : 'N/A'}`;
+                messageText += `\n現在の状況: ${flight["備考訳名称"]["ja"] || flightStatus}`;
+                if (actualTime) {
+                    messageText += `\n変更時刻: ${actualTime.substring(actualTime.indexOf(' ') + 1, actualTime.lastIndexOf(':'))}`;
+                }
+                messageText += `\nターミナル: T${flight["ターミナル区分"]}`;
+                messageText += `\n出口: ${flight["出口"]}`;
+
+                const messagesToSend = [{ type: 'text', text: messageText }];
+                await sendLinePush(env.LINE_USER_ID, messagesToSend, env);
+
+                // 通知済みとしてKVに記録 (例: 24時間後に期限切れ)
+                await env.DELAYED_FLIGHTS_KV.put(notificationKey, "true", { expirationTtl: 60 * 60 * 24 });
+            }
+        }
+    }
+}
+
 // Export the Worker handlers
 export default {
     async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
@@ -166,5 +220,9 @@ export default {
 
         // Fallback for any unhandled routes
         return new Response("Not Found", { status: 404 });
+    },
+
+    async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
+        ctx.waitUntil(sendDelayedFlightNotifications(env));
     },
 };

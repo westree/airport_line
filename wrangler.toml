@@ -2,7 +2,8 @@ name = "flight-delay-worker"
 main = "src/index.ts"
 compatibility_date = "2024-04-05"
 kv_namespaces = [
-  { binding = "STATIC_ASSETS", id = "8dee8b10dfb54f1381dbcfcefc55f314" }
+  { binding = "STATIC_ASSETS", id = "8dee8b10dfb54f1381dbcfcefc55f314" },
+  { binding = "DELAYED_FLIGHTS_KV", id = "0ba5823e1ba748d989090dd0683e1459" }
 ]
 
 
