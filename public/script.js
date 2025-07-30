@@ -14,19 +14,49 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
+            // 出口ごとにフライトをグループ化
+            const flightsByExit = flights.reduce((acc, flight) => {
+                const exitKey = flight.exit || '不明な出口';
+                if (!acc[exitKey]) {
+                    acc[exitKey] = [];
+                }
+                acc[exitKey].push(flight);
+                return acc;
+            }, {});
+
             flightList.innerHTML = ''; // Clear loading message
-            flights.forEach(flight => {
-                const flightItem = document.createElement('div');
-                flightItem.classList.add('flight-item');
-                flightItem.innerHTML = `
-                    <h2>${flight.airline} ${flight.flightNumber}</h2>
-                    <p>予定時刻: ${flight.scheduledTime}</p>
-                    <p>実際時刻: ${flight.actualTime || '--:--'}</p>
-                    <p>ターミナル: ${flight.terminal}</p>
-                    <p>出口: ${flight.exit}</p>
-                `;
-                flightList.appendChild(flightItem);
-            });
+
+            // 各出口のフライトを表示
+            for (const exitKey in flightsByExit) {
+                const exitSection = document.createElement('div');
+                exitSection.classList.add('exit-section');
+
+                const exitHeader = document.createElement('h2');
+                exitHeader.textContent = `出口: ${exitKey}`;
+                exitSection.appendChild(exitHeader);
+
+                const exitFlightList = document.createElement('ul');
+                exitFlightList.classList.add('exit-flight-list');
+
+                // フライトを時間でソート
+                flightsByExit[exitKey].sort((a, b) => {
+                    const timeA = (a.actualDateTime || a.scheduledDateTime)?.getTime() || 0;
+                    const timeB = (b.actualDateTime || b.scheduledDateTime)?.getTime() || 0;
+                    return timeA - timeB; // Sort ascending
+                }).forEach(flight => {
+                    const flightItem = document.createElement('li');
+                    flightItem.classList.add('flight-item');
+                    flightItem.innerHTML = `
+                        <span class="flight-time">${flight.actualTime || flight.scheduledTime}</span>
+                        <span class="flight-info">${flight.airline} ${flight.flightNumber}</span>
+                        <span class="flight-terminal">T${flight.terminal}</span>
+                    `;
+                    exitFlightList.appendChild(flightItem);
+                });
+
+                exitSection.appendChild(exitFlightList);
+                flightList.appendChild(exitSection);
+            }
 
             lastUpdatedTime.textContent = new Date().toLocaleString('ja-JP', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 

@@ -32,22 +32,59 @@ h1 {
     margin-top: 20px;
 }
 
+.exit-section {
+    background-color: #f8f9fa;
+    border: 1px solid #e9ecef;
+    border-radius: 8px;
+    padding: 15px;
+    margin-bottom: 20px;
+}
+
+.exit-section h2 {
+    color: #007bff;
+    margin-top: 0;
+    margin-bottom: 10px;
+    border-bottom: 2px solid #007bff;
+    padding-bottom: 5px;
+}
+
+.exit-flight-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
 .flight-item {
     background-color: #e9ecef;
     border: 1px solid #ddd;
     border-radius: 5px;
-    padding: 15px;
-    margin-bottom: 10px;
+    padding: 10px;
+    margin-bottom: 8px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.9em;
 }
 
-.flight-item h2 {
-    margin-top: 0;
-    color: #0056b3;
-    font-size: 1.2em;
+.flight-item:last-child {
+    margin-bottom: 0;
 }
 
-.flight-item p {
-    margin: 5px 0;
+.flight-time {
+    font-weight: bold;
+    color: #333;
+    flex-basis: 20%;
+}
+
+.flight-info {
+    flex-basis: 50%;
+    text-align: left;
+}
+
+.flight-terminal {
+    flex-basis: 20%;
+    text-align: right;
+    color: #555;
 }
 
 .loading, .error {
@@ -75,4 +112,19 @@ button {
 
 button:hover {
     background-color: #0056b3;
+}
+
+@media (max-width: 600px) {
+    .flight-item {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .flight-time,
+    .flight-info,
+    .flight-terminal {
+        flex-basis: auto;
+        width: 100%;
+        text-align: left;
+    }
 }

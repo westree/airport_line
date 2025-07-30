@@ -1,1 +1,1 @@
-refactor: コードのクリーンアップとモジュール分割 (utils, hanedaApi, ttcApi)
+feat: 遅延便プッシュ通知機能の追加とKVバインディングの修正
