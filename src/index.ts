@@ -2,63 +2,88 @@ import { Router, IRequest } from 'itty-router';
 
 // Define the environment variables
 export interface Env {
-    ODPT_TOKEN: string;
+    
     LINE_TOKEN: string;
     LINE_USER_ID: string;
     STATIC_ASSETS: KVNamespace; // Add KV Namespace binding
 }
 
 // Define the structure of the flight information from the ODPT API
-interface FlightInformation {
-    "owl:sameAs": string;
-    "odpt:operator": string;
-    "odpt:flightNumber": string[];
-    "odpt:flightStatus": string | null;
-    "odpt:scheduledArrivalTime": string;
-    "odpt:actualArrivalTime": string | null;
-    "odpt:arrivalAirport": string;
-    "odpt:departureAirport": string;
-    "odpt:arrivalAirportTerminal": string | null;
-    "odpt:arrivalGate": string | null;
-    "dc:date"?: string;
+interface HanedaFlightInfo {
+    "航空会社": Array<{
+        "ＡＬコード": string;
+        "ＡＬ和名称": string;
+        "ＡＬ英名称": string;
+        "便名": string;
+    }>;
+    "出発地空港コード": string;
+    "出発地空港和名称": string;
+    "出発地空港英名称": string;
+    "定刻": string;
+    "状況": string;
+    "変更時刻": string;
+    "ターミナル区分": string;
+    "ウイング区分": string;
+    "出口": string;
+    "STA": string; // Scheduled Time of Arrival
+    "ETA": string; // Estimated Time of Arrival
+    "ATA": string; // Actual Time of Arrival
 }
 
-const getDateFromHHMM = (timeStr: string | null, dateStr: string | undefined, now: Date): Date | null => {
-    if (!timeStr) return null;
-    const [hours, minutes] = timeStr.split(':').map(Number);
+// Define the structure of the flight information from the Haneda API
+interface HanedaFlightInfo {
+    "航空会社": Array<{
+        "ＡＬコード": string;
+        "ＡＬ和名称": string;
+        "ＡＬ英名称": string;
+        "便名": string;
+    }>;
+    "出発地空港コード": string;
+    "出発地空港和名称": string;
+    "出発地空港英名称": string;
+    "定刻": string;
+    "状況": string;
+    "変更時刻": string;
+    "ターミナル区分": string;
+    "ウイング区分": string;
+    "出口": string;
+    "STA": string; // Scheduled Time of Arrival
+    "ETA": string; // Estimated Time of Arrival
+    "ATA": string; // Actual Time of Arrival
+}
 
-    let baseDateUTC: Date;
-    if (dateStr) {
-        // Parse the ISO string. This will give a Date object representing that exact moment in time.
-        baseDateUTC = new Date(dateStr);
+// Function to parse date and time strings from the Haneda API
+const parseDateTime = (dateTimeStr: string | null, now: Date): Date | null => {
+    if (!dateTimeStr) return null;
+
+    let year, month, day, hours, minutes;
+
+    if (dateTimeStr.includes('/')) { // YYYY/MM/DD HH:MM:SS format (e.g., "2025/07/30 07:50:00")
+        const [datePart, timePart] = dateTimeStr.split(' ');
+        const [y, m, d] = datePart.split('/').map(Number);
+        const [h, min] = timePart.split(':').map(Number);
+        year = y;
+        month = m - 1; // Month is 0-indexed in JavaScript Date
+        day = d;
+        hours = h;
+        minutes = min;
+    } else if (dateTimeStr.length === 12) { // YYYYMMDDHHMM format (e.g., "202507300750")
+        year = parseInt(dateTimeStr.substring(0, 4));
+        month = parseInt(dateTimeStr.substring(4, 6)) - 1;
+        day = parseInt(dateTimeStr.substring(6, 8));
+        hours = parseInt(dateTimeStr.substring(8, 10));
+        minutes = parseInt(dateTimeStr.substring(10, 12));
     } else {
-        // Get today's date in UTC (from the 'now' parameter which is UTC)
-        baseDateUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+        return null; // Unknown format
     }
 
-    // Convert JST hours to UTC hours (JST is UTC+9)
-    let targetHoursUTC = hours - 9;
-    let targetMinutesUTC = minutes;
-
-    // Handle cases where subtracting 9 hours goes to the previous day
-    if (targetHoursUTC < 0) {
-        targetHoursUTC += 24; // Add 24 hours to bring it to the current day's UTC equivalent
-        baseDateUTC.setUTCDate(baseDateUTC.getUTCDate() - 1); // Go back one day in UTC
-    }
-
-    let targetDate = new Date(Date.UTC(
-        baseDateUTC.getUTCFullYear(),
-        baseDateUTC.getUTCMonth(),
-        baseDateUTC.getUTCDate(),
-        targetHoursUTC,
-        targetMinutesUTC,
-        0,
-        0
-    ));
+    // Create a Date object in JST (UTC+9)
+    let targetDate = new Date(Date.UTC(year, month, day, hours - 9, minutes, 0, 0));
 
     // If the targetDate (which is now in UTC, representing JST time) is in the past relative to 'now' (UTC),
     // it's likely meant for the next day. So, advance targetDate by one day.
-    if (targetDate.getTime() < now.getTime()) {
+    // This logic is crucial for handling flights that depart late at night and arrive the next day.
+    if (targetDate.getTime() < now.getTime() - (24 * 60 * 60 * 1000) && (hours >= 0 && hours < 9)) { // If it's more than 24 hours in the past and in the early morning JST
         targetDate.setUTCDate(targetDate.getUTCDate() + 1);
     }
 
@@ -68,23 +93,43 @@ const getDateFromHHMM = (timeStr: string | null, dateStr: string | undefined, no
 const router = Router();
 
 // --- New function to get filtered and sorted flights ---
-async function getFilteredAndSortedFlights(env: Env): Promise<any[]> {
-    const flights = await fetchFlightInformation(env);
+async function getFilteredAndSortedFlights(): Promise<any[]> {
+    const flights = await fetchFlightInformation();
     const now = new Date();
-    const twoHoursAgo = new Date(now.getTime() - 2 * 60 * 60 * 1000);
-    const oneHourLater = new Date(now.getTime() + 1 * 60 * 60 * 1000);
+    const oneHourAgo = new Date(now.getTime() - 1 * 60 * 60 * 1000);
+    const twoHoursLater = new Date(now.getTime() + 2 * 60 * 60 * 1000);
 
     const processedFlights = flights.map(flight => {
+        const scheduledTime = flight["定刻"];
+        const actualTime = flight["変更時刻"] || flight["ATA"] || flight["ETA"]; // Use 変更時刻, then ATA, then ETA
+        const flightOperator = flight["航空会社"][0]["ＡＬ和名称"];
+        const flightNumber = flight["航空会社"][0]["便名"];
+        const terminal = flight["ターミナル区分"];
+        const wing = flight["ウイング区分"];
+        const exit = flight["出口"];
+
+        let formattedTerminal = `T${terminal}`;
+        if (terminal === "1") {
+            formattedTerminal += (wing === "N" ? " NorthWing" : (wing === "S" ? " SouthWing" : ""));
+        } else if (terminal === "2") {
+            formattedTerminal += (wing === "N" ? " NorthWing" : (wing === "S" ? " SouthWing" : ""));
+        }
+
         return {
-            ...flight,
-            actualDateTime: getDateFromHHMM(flight["odpt:actualArrivalTime"], flight["dc:date"], now),
-            scheduledDateTime: getDateFromHHMM(flight["odpt:scheduledArrivalTime"], flight["dc:date"], now)
+            airline: flightOperator,
+            flightNumber: flightNumber,
+            scheduledTime: scheduledTime ? scheduledTime.substring(scheduledTime.indexOf(' ') + 1, scheduledTime.lastIndexOf(':')) : 'N/A',
+            actualTime: actualTime ? actualTime.substring(actualTime.indexOf(' ') + 1, actualTime.lastIndexOf(':')) : '',
+            terminal: formattedTerminal,
+            exit: exit,
+            actualDateTime: parseDateTime(actualTime, now),
+            scheduledDateTime: parseDateTime(scheduledTime, now)
         };
-    });
+    }).filter(flight => flight.terminal !== "T3"); // Filter out international flights (Terminal 3)
 
     const filteredFlights = processedFlights.filter(flight => {
         const targetTime = flight.actualDateTime || flight.scheduledDateTime;
-        return targetTime && targetTime >= twoHoursAgo && targetTime <= oneHourLater;
+        return targetTime && targetTime >= oneHourAgo && targetTime <= twoHoursLater;
     });
 
     const sortedFlights = filteredFlights.sort((a, b) => {
@@ -96,16 +141,7 @@ async function getFilteredAndSortedFlights(env: Env): Promise<any[]> {
     // Take the top 5 flights for display
     const displayFlights = sortedFlights.slice(0, 5);
 
-    // Format for web display (simplified)
-    return displayFlights.map(flight => ({
-        airline: flight["odpt:operator"].replace('odpt.Operator:', ''),
-        flightNumber: flight["odpt:flightNumber"].join('/'),
-        scheduledTime: flight["odpt:scheduledArrivalTime"] || 'N/A',
-        actualTime: flight["odpt:actualArrivalTime"] || '',
-        terminal: flight["odpt:arrivalAirportTerminal"] ? flight["odpt:arrivalAirportTerminal"].replace('odpt.AirportTerminal:HND.', '') : 'N/A',
-        // Add exit information if available from ODPT API, otherwise leave it out for now.
-        // exit: flight["odpt:exit"] || 'N/A' // Placeholder for exit info
-    }));
+    return displayFlights;
 }
 
 // Handle incoming webhooks from LINE
@@ -117,7 +153,7 @@ router.post('/webhook', async (request: IRequest, env: Env) => {
         const event = events[0];
         if (event.type === 'message' && event.message.text === '到着状況') {
             // Reuse the logic to get filtered flights
-            const displayFlights = await getFilteredAndSortedFlights(env);
+            const displayFlights = await getFilteredAndSortedFlights();
             const ttcInfo = await fetchTTCInfo(); // Fetch TTC info
 
             const messagesToSend: { type: string; text: string; }[] = [];
@@ -133,7 +169,7 @@ router.post('/webhook', async (request: IRequest, env: Env) => {
                         if (flight.actualTime && flight.actualTime !== flight.scheduledTime) {
                             timeInfo += ` / 実際: ${flight.actualTime}`;
                         }
-                        return `[${flight.airline}] [${flight.flightNumber}]\n${timeInfo}\nターミナル: T${flight.terminal}`;
+                        return `[${flight.airline}] [${flight.flightNumber}]\n${timeInfo}\nターミナル: ${flight.terminal}\n出口: ${flight.exit}`;
                     })
                     .join('\n\n');
                 messagesToSend.push({ type: 'text', text: `[フライト到着状況]\n${flightMessage}` });
@@ -153,7 +189,7 @@ router.post('/webhook', async (request: IRequest, env: Env) => {
 // --- New API endpoint for web interface ---
 router.get('/api/arrivals', async (request: IRequest, env: Env) => {
     try {
-        const flights = await getFilteredAndSortedFlights(env);
+        const flights = await getFilteredAndSortedFlights();
         return new Response(JSON.stringify(flights), {
             headers: { 'Content-Type': 'application/json' },
         });
@@ -181,15 +217,15 @@ async function sendLineReply(replyToken: string, messages: { type: string; text:
     });
 }
 
-// Fetch flight information from the ODPT API
-async function fetchFlightInformation(env: Env): Promise<FlightInformation[]> {
-    const response = await fetch(`https://api.odpt.org/api/v4/odpt:FlightInformationArrival?odpt:arrivalAirport=odpt.Airport:HND&acl:consumerKey=${env.ODPT_TOKEN}`);
+// Fetch flight information from the Haneda API
+async function fetchFlightInformation(): Promise<HanedaFlightInfo[]> {
+    const response = await fetch("https://tokyo-haneda.com/app_resource/flight/data/dms/hdacfarv_v2.json");
     if (!response.ok) {
-        console.error('Failed to fetch flight information:', await response.text());
+        console.error('Failed to fetch flight information from Haneda API:', await response.text());
         return [];
     }
-    const data = await response.json() as FlightInformation[];
-    return data;
+    const data = await response.json();
+    return data.flight_info as HanedaFlightInfo[];
 }
 
 // Function to fetch and parse TTC info
@@ -232,6 +268,7 @@ export default {
 
         // Handle static file requests from KV
         if (url.pathname === '/' || url.pathname === '/index.html') {
+            console.log("Attempting to get index.html from STATIC_ASSETS. env.STATIC_ASSETS:", env.STATIC_ASSETS);
             const html = await env.STATIC_ASSETS.get('index.html', { type: 'text' });
             return new Response(html, { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
         } else if (url.pathname === '/style.css') {
