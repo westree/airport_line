@@ -1,0 +1,21 @@
+name = "flight-delay-worker"
+main = "src/index.ts"
+compatibility_date = "2024-04-05"
+
+[triggers]
+crons = ["*/5 14-20 * * *"]
+
+[vars]
+ODPT_TOKEN = "cgvjskld3ymntrdtt1xvpl0ny5fny7egr3whz0e731qpr0nh1befynx55qc8s7xu"
+LINE_TOKEN = "5SuDBCjcxBqtVj/rsF8k+XNry3T/KP6IcNnK0cWYoIzO99xaojNm5GDQPliWp2Qre6hG8UKjvzegiJnA97QCVaXJqJqX7wqrNN1sNx6QviukBcSpMSf1NOjWCERHWydGu2TSkyDeclQUt3EXFLGs3wdB04t89/1O/w1cDnyilFU="
+LINE_USER_ID = "U5265fdf3d5387ad904bbec15446dea11"
+
+logpush = true
+
+[observability]
+enabled = true
+head_sampling_rate = 1
+
+kv_namespaces = [
+  { binding = "STATIC_ASSETS", id = "8dee8b10dfb54f1381dbcfcefc55f314" }
+]
